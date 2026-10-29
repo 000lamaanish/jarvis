@@ -25,10 +25,10 @@
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-# from app.database import initialize_database, save_message, get_recent_messages
+from app.database import initialize_database, save_message, get_recent_messages
 
 app = FastAPI(title="JARVIS AI Assistant")
-# initialize_database()
+initialize_database()
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "qwen2.5:7b"
@@ -51,16 +51,13 @@ def home():
 def health():
     return {"status": "healthy"}
 
-
-# Temporary conversation memory
-conversation_history = []
-
 @app.post("/chat")
 def chat(request: ChatRequest):
-    conversation_history.append({
-        "role": "user",
-        "content": request.message
-    })
+    # Save the user's message permanently
+    save_message("user", request.message)
+
+    # Retrieve recent conversation history from SQLite
+    history = get_recent_messages(limit=10)
 
     messages = [
         {
@@ -72,10 +69,7 @@ def chat(request: ChatRequest):
                 "about information the user shared earlier."
             )
         }
-    ] + conversation_history[-10:]
-
-    # Print the messages before sending them to Ollama
-    print("MESSAGES SENT TO OLLAMA:", messages)
+    ] + history
 
     try:
         response = requests.post(
@@ -92,10 +86,8 @@ def chat(request: ChatRequest):
         result = response.json()
         reply = result["message"]["content"]
 
-        conversation_history.append({
-            "role": "assistant",
-            "content": reply
-        })
+        # Save JARVIS's response permanently
+        save_message("assistant", reply)
 
         return {
             "assistant": "JARVIS",
@@ -103,7 +95,6 @@ def chat(request: ChatRequest):
         }
 
     except requests.RequestException as error:
-        conversation_history.pop()
         raise HTTPException(
             status_code=502,
             detail=f"Could not communicate with Ollama: {error}"
